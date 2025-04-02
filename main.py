@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.fft import fft, fftfreq
 import statistics
+from scipy.signal import decimate
+from scipy.signal import welch
+
 
 file_name = "202503281215_SHM-1.tdms"
 
@@ -19,8 +22,63 @@ mean = statistics.mean(channel1_data)
 stddev = np.std(channel1_data)
 numDataPoints = len(channel1_data)
 
-print("original mean: {mean}")
-print("original stddev: {stddev}")
+# Compute time differences between consecutive samples
+time_diffs = np.diff(channel1_time)  # Differences between time points
+
+# Compute the sampling frequency (fs)
+fs = 1 / np.mean(time_diffs)  # Average sample rate
+
+print(f"Estimated Sampling Frequency: {fs:.2f} Hz")
+
+
+# Compute PSD
+frequencies, power = welch(channel1_data, fs, nperseg=1024)
+
+# Find the maximum frequency with significant power
+threshold = max(power) * 0.01  # Set a threshold at 1% of max power to ignore noise
+max_freq_psd = max(frequencies[power > threshold])
+
+# Plot PSD
+plt.figure(figsize=(10, 5))
+plt.semilogy(frequencies, power)
+plt.xlabel("Frequency (Hz)")
+plt.ylabel("Power Spectral Density")
+plt.title("Power Spectrum of the Signal")
+plt.grid()
+plt.show()
+
+print(f"Estimated Maximum Frequency Component (from PSD): {max_freq_psd:.2f} Hz")
+
+
+q = 10 
+mean_original = np.mean(channel1_data)
+channel1_data_demeaned = channel1_data - mean_original
+channel1_data_decimated = decimate(channel1_data_demeaned, q, ftype='iir', zero_phase=True)
+channel1_data_decimated += mean_original  # Add the mean back
+
+channel1_time_decimated = channel1_time[::q]
+
+print(f"Mean (Original): {np.mean(channel1_data)}")
+print(f"Mean (Decimated): {np.mean(channel1_data_decimated)}")
+
+print(len(channel1_time_decimated))
+
+plt.figure(figsize=(10, 5))
+
+plt.plot(channel1_time, channel1_data, label="Original Signal", color='blue', alpha=0.6)
+plt.plot(channel1_time_decimated, channel1_data_decimated, label="Decimated Signal", color='red', linestyle='--', marker='o')
+
+# Labels and title
+plt.xlabel("Time (s)")
+plt.ylabel("Amplitude")
+plt.title("Original vs. Decimated Signal")
+plt.legend()
+plt.grid(True)
+
+# Show plot
+plt.show()
+
+
 
 f = open("OneStandardDev.txt","a")
 decimatedData = []
