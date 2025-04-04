@@ -1,0 +1,3 @@
+[submodule "monash-living-lab"]
+	path = monash-living-lab
+	url = https://github.com/MonashSmartStructures/monash-living-lab.git
