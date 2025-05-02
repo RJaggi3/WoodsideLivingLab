@@ -5,7 +5,7 @@ from scipy.fft import fft, fftfreq
 import statistics
 from scipy.signal import decimate, resample, resample_poly
 
-file_name = "202109220920_SHM-6.tdms"
+file_name = "tdms_files\\202109220920_SHM-6.tdms"
 
 tdms_file = TdmsFile.read(file_name)
 
@@ -15,6 +15,9 @@ channel1 = all_groups[0].channels()[0]
 
 channel1_data = channel1[0:]
 channel1_time = channel1.time_track()
+print(len(channel1_data))
+print(len(channel1_time))
+print(channel1_time)
 
 mean = statistics.mean(channel1_data)
 stddev = np.std(channel1_data)
