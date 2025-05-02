@@ -3,11 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.fft import fft, fftfreq
 import statistics
-from scipy.signal import decimate
-from scipy.signal import welch
+from scipy.signal import decimate, resample, resample_poly
 
-
-file_name = "202503281215_SHM-1.tdms"
+file_name = "202109220920_SHM-6.tdms"
 
 tdms_file = TdmsFile.read(file_name)
 
@@ -28,23 +26,8 @@ time_diffs = np.diff(channel1_time)
 
 fs = 1 / np.mean(time_diffs) 
 
-frequencies, power = welch(channel1_data, fs, nperseg=1024)
-
-threshold = max(power) * 0.01  
-max_freq_psd = max(frequencies[power > threshold])
-
-plt.figure(figsize=(10, 5))
-plt.semilogy(frequencies, power)
-plt.xlabel("Frequency (Hz)")
-plt.ylabel("Power Spectral Density")
-plt.title("Power Spectrum of the Signal")
-plt.grid()
-plt.show()
-
-print(f"Estimated Maximum Frequency Component (from PSD): {max_freq_psd:.2f} Hz")
-
-
-q = 13 
+#decimate
+q = 2
 mean_original = np.mean(channel1_data)
 channel1_data_demeaned = channel1_data - mean_original
 channel1_data_decimated = decimate(channel1_data_demeaned, q, ftype='iir', zero_phase=True)
@@ -52,81 +35,70 @@ channel1_data_decimated += mean_original
 
 channel1_time_decimated = channel1_time[::q]
 
-print(f"Mean (Original): {np.mean(channel1_data)}")
-print(f"Mean (Decimated): {np.mean(channel1_data_decimated)}")
-print(np.mean(channel1_data_decimated)/mean_original)
+#resample
+num_resample_points = int(len(channel1_data) * fs / 50)
+channel1_data_resampled = resample(channel1_data, num_resample_points)
+channel1_time_resampled = np.linspace(channel1_time[0], channel1_time[-1], num_resample_points)
 
-print(len(channel1_time_decimated))
+#resample_ploy
+downsample_factor_num = 5  
+downsample_factor_den = 9 
+channel1_data_resample_poly = resample_poly(channel1_data_demeaned, downsample_factor_num, downsample_factor_den)
+channel1_data_resample_poly += mean_original  
+channel1_time_resample_poly = np.linspace(channel1_time[0], channel1_time[-1], len(channel1_data_resample_poly))
+# Zoom settings
+start_time = 0
+end_time = 2  
 
-plt.figure(figsize=(10, 5))
+# Create mask for the zoomed-in time range
+mask_original = (channel1_time >= start_time) & (channel1_time <= end_time)
+mask_decimated = (channel1_time_decimated >= start_time) & (channel1_time_decimated <= end_time)
+mask_resampled = (channel1_time_resampled >= start_time) & (channel1_time_resampled <= end_time)
+mask_resample_poly = (channel1_time_resample_poly >= start_time) & (channel1_time_resample_poly <= end_time)
 
-plt.plot(channel1_time, channel1_data, label="Original Signal", color='blue', alpha=0.6)
-plt.plot(channel1_time_decimated, channel1_data_decimated, label="Decimated Signal", color='red', linestyle='--')
 
+plt.figure(figsize=(14, 6))
+
+plt.plot(channel1_time[mask_original], channel1_data[mask_original],
+         label="Original Signal", color='blue', linewidth=1)
+
+plt.plot(channel1_time_decimated[mask_decimated], channel1_data_decimated[mask_decimated],
+         label="Decimated Signal", color='red', linestyle='--')
+
+plt.plot(channel1_time_resampled[mask_resampled], channel1_data_resampled[mask_resampled],
+         label="Resampled", color='green', linestyle=':')
+
+plt.plot(channel1_time_resample_poly[mask_resample_poly], channel1_data_resample_poly[mask_resample_poly],
+         label="Resample Poly", color='orange', linestyle='-.')
 
 plt.xlabel("Time (s)")
 plt.ylabel("Amplitude")
-plt.title("Original vs. Decimated Signal")
+plt.title("Comparison of Downsampling Methods (First 2 Seconds)")
 plt.legend()
 plt.grid(True)
-
+plt.tight_layout()
 plt.show()
 
 
+# Plotting the full-length comparison
+plt.figure(figsize=(14, 6))
 
-f = open("OneStandardDev.txt","a")
-decimatedData = []
+plt.plot(channel1_time, channel1_data,
+         label="Original Signal", color='blue', linewidth=1)
 
-negEndpoint = mean - stddev
-posEndpoint = mean + stddev
+plt.plot(channel1_time_decimated, channel1_data_decimated,
+         label="Decimated Signal", color='red', linestyle='--')
 
-for x in range(len(channel1_data)):
-    dataPoint = channel1_data[x]
-    if dataPoint <= posEndpoint and dataPoint >= negEndpoint:
-        continue
-    else:
-        decimatedData.append(dataPoint)
+plt.plot(channel1_time_resampled, channel1_data_resampled,
+         label="Resampled", color='green', linestyle=':')
 
-count = len(decimatedData)
-newMean = statistics.mean(decimatedData)
-newstddev = np.std(decimatedData)
+plt.plot(channel1_time_resample_poly, channel1_data_resample_poly,
+         label="Resample Poly", color='orange', linestyle='-.')
 
-f.write(f"Original Mean: {mean} \n")
-f.write(f"Original stddev: {stddev} \n")
-f.write(f"Original number of data points: {numDataPoints} \n")
-
-
-f.write(f"New Mean: {newMean} \n")
-f.write(f"New stddev: {newstddev} \n")
-f.write(f"New number of data points: {count} \n")
-f.write(f"List: {decimatedData} \n")
-
-
-
-
-
-print(stddev)
-
-#plt.plot(channel1_time,channel1_data)
-#plt.show()
-
-#transformation code
-"""
-numDataPoints = len(channel1_data)
-sampleRate = 1/channel1.properties['wf_increment']
-
-
-
-yf = fft(channel1_data)
-xf = fftfreq(numDataPoints, sampleRate)
-
-yf_shifted = np.fft.fftshift(yf)
-xf_shifted = np.fft.fftshift(xf)
-
-plt.plot(xf_shifted, 2.0/numDataPoints * np.abs(yf_shifted))
-plt.xlabel("Frequency (Hz)")
+plt.xlabel("Time (s)")
 plt.ylabel("Amplitude")
-plt.title("Full Frequency Spectrum from TDMS Data")
-plt.grid()
+plt.title("Comparison of Downsampling Methods (Full Duration)")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
 plt.show()
-"""
