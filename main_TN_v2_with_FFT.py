@@ -10,8 +10,8 @@ def chunks(lst, n):
         yield lst[i:i + n]
 
 # Define your TDMS file name and output PDF name
-file_name = "202503281215_SHM-1.tdms"
-pdf_name = file_name.replace(".tdms", "_FREQ.pdf")
+file_name = "202503281215_SHM-2.tdms"
+pdf_name = file_name.replace(".tdms", "_FREQ_v2.pdf")
 
 # Read the TDMS file and collect all channels
 tdms_file = TdmsFile.read(file_name)
@@ -72,12 +72,22 @@ for channel_group in chunks(channels, 6):
                          zorder=30)
         
         # Decimation
-        q = 10  # Decimation factor
+        q = 2  # Decimation factor
         mean_original = np.mean(data)
         data_demeaned = data - mean_original
         data_decimated = decimate(data_demeaned, q, ftype='iir', zero_phase=True)
         data_decimated += mean_original
         channel_time_decimated = channel_time[::q]
+        
+        # Calculate and print how many samples were deleted after decimation
+        original_length = len(data)
+        decimated_length = len(data_decimated)
+        deleted_samples = original_length - decimated_length
+        percent_deleted = 100 * deleted_samples / original_length
+        print(f"Channel {channel.name}: Original samples = {original_length}, "
+              f"Decimated samples = {decimated_length}, "
+              f"Deleted samples = {deleted_samples} ({percent_deleted:.2f}% reduction)")
+        
         ax_time.plot(channel_time_decimated, data_decimated,
                      label="Decimated Signal",
                      color='red',
@@ -146,17 +156,16 @@ for channel_group in chunks(channels, 6):
         f_axis_decimated = np.fft.rfftfreq(len(data_decimated), d=dt_decimated)
         fft_vals_decimated = np.fft.rfft(data_decimated - mean_original)
         magnitude_decimated = np.abs(fft_vals_decimated)
-
+        
         ax_freq.plot(f_axis, magnitude,
                      label="FFT Magnitude - ORG",
                      color='blue',
                      zorder=10)
+        
         ax_freq.plot(f_axis_decimated, magnitude_decimated,
                      label="FFT Magnitude - DEC",
                      color='red',
                      zorder=10)
-
-        
 
         ax_freq.set_xlabel("Frequency (Hz)")
         ax_freq.set_ylabel("Magnitude")
@@ -174,6 +183,6 @@ for channel_group in chunks(channels, 6):
     pdf.savefig(fig, bbox_inches="tight", dpi=100)
     plt.close(fig)
     print("Page added.")
-    
+
 pdf.close()
 print(f"All channel plots have been compiled into the file: {pdf_name}")

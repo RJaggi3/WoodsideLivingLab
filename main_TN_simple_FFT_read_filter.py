@@ -124,10 +124,10 @@ for channel_group in chunks(channels, 6):
         
         # --- PLOT DENOISED TIME DOMAIN ---
         ax_denoised.plot(time_track, data_denoised, linewidth=0.75,
-                         color='green', label="Denoised Signal", rasterized=True, zorder=10)
+                         color='green', label="Inverse FFT Signal", rasterized=True, zorder=10)
         ax_denoised.set_xlabel("Time")
         ax_denoised.set_ylabel(y_label)
-        ax_denoised.set_title(f"Channel: {channel.name}\n(Denoised Time Domain)\nData Reduction: {reduction_percentage:.2f}%")
+        ax_denoised.set_title(f"Channel: {channel.name}\n(Reconstructed Time Domain)")
         ax_denoised.grid(True)
         leg_denoised = ax_denoised.legend(loc="lower right")
         leg_denoised.set_zorder(40)
