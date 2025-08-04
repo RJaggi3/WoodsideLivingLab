@@ -10,7 +10,7 @@ def chunks(lst, n):
 
 # Define your TDMS file name and output PDF name
 file_name = "202109220920_SHM-6.tdms"
-pdf_name = file_name.replace(".tdms", "_FREQ_IIR2.pdf")
+pdf_name = file_name.replace(".tdms", "_FREQ_IIR.pdf")
 
 # Read the TDMS file and collect all channels
 tdms_file = TdmsFile.read(file_name)

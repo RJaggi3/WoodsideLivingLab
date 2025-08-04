@@ -9,37 +9,51 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
-def fft_reconstruct(decimated_signal, target_length):
+def fft_reconstruct(decimated_signal, target_length, decimation_factor):
     """
-    Reconstruct a full-length time domain signal from a decimated signal using FFT-based zero-padding.
-
+    Reconstruct a full-length time domain signal from a decimated signal by
+    mapping its FFT bins into an FFT of length `target_length` and zeroing 
+    any missing bins.
+    
     Parameters:
-      decimated_signal: The decimated signal array (of length M).
-      target_length: The desired length (N) of the reconstructed signal.
+      decimated_signal: The decimated signal array (length M)
+      target_length: The desired output length (should be equal to the original signal’s length)
+      decimation_factor: The decimation factor (q)
       
     Returns:
-      A time-domain signal of length target_length, obtained by zero-padding the FFT of the decimated signal.
+      A time-domain signal of length target_length, reconstructed using the 
+      FFT bins from the decimated signal.
     """
-    N_dec = len(decimated_signal)
-    fft_decimated = np.fft.fft(decimated_signal)
-    padded_fft = np.zeros(target_length, dtype=complex)
+    M = len(decimated_signal)
+    fft_decimated = np.fft.fft(decimated_signal)  # FFT of decimated signal (length M)
+    N = target_length
+
+    # Optional check: ideally, original length should equal decimation_factor * M.
+    #if N != decimation_factor * M:
+    #    print("Warning: target_length != decimation_factor * len(decimated_signal)")
     
-    # Handle even and odd lengths appropriately to preserve symmetry
-    if N_dec % 2 == 0:
-        half = N_dec // 2
-        padded_fft[:half] = fft_decimated[:half]
-        padded_fft[-half:] = fft_decimated[half:]
-    else:
-        half = N_dec // 2
-        padded_fft[:half+1] = fft_decimated[:half+1]
-        padded_fft[-half:] = fft_decimated[half+1:]
+    # Create an empty FFT array of the full (original) length.
+    full_fft = np.zeros(N, dtype=complex)
     
-    reconstructed_signal = np.fft.ifft(padded_fft).real
+    # Number of positive-frequency bins for a real signal is M//2 + 1.
+    pos_bins = M // 2 + 1
+
+    # Map the positive frequencies
+    for i in range(pos_bins):
+        idx = i * decimation_factor  # corresponding FFT bin index in the original grid
+        if idx < N:
+            full_fft[idx] = fft_decimated[i]
+    
+    # Map the negative frequencies.
+    for i in range(1, M - pos_bins + 1):
+        full_fft[-(i * decimation_factor)] = fft_decimated[M - i]
+    
+    reconstructed_signal = np.fft.ifft(full_fft).real
     return reconstructed_signal
 
 # Define your TDMS file and output PDF name.
-file_name = "202305282340_SHM-6.tdms"
-pdf_name = file_name.replace(".tdms", "_FREQ_TD_diff_IFFT.pdf")
+file_name = "202109220920_SHM-6.tdms"
+pdf_name = file_name.replace(".tdms", "_FREQ_TD_diff_IFFT_3.pdf")
 
 # Read the TDMS file and collect all channels.
 tdms_file = TdmsFile.read(file_name)
@@ -51,45 +65,49 @@ for group in all_groups:
 
 plt.rcParams.update({'font.size': 7})
 
-# Open a PdfPages object so each figure becomes one PDF page.
+# Open a PdfPages object so that each figure becomes one PDF page.
 pdf = matplotlib.backends.backend_pdf.PdfPages(pdf_name)
 
-# Define grid dimensions: 6 rows x 4 columns.
+# Define grid dimensions: 6 rows x 5 columns.
 n_rows_fixed = 6
-n_cols = 4
+n_cols = 5  # updated to include an extra column for SFM
 
-# Process channels in groups, up to 6 channels per page.
+# Set a decimation factor (q)
+decimation_factor = 2  # or any integer decimation factor you're using
+
+# Process channels in groups (up to 6 channels per page).
 for channel_group in chunks(channels, 6):
     n_channels = len(channel_group)
-    # Create a new figure with fixed grid, using A3 landscape size.
     fig, axs = plt.subplots(nrows=n_rows_fixed, ncols=n_cols, figsize=(16.54, 11.69))
     if n_rows_fixed == 1:
         axs = np.array([axs])
     
     for i, channel in enumerate(channel_group):
-        # Column 0: Raw Time Domain (with trendline & stats).
+        # Set up subplots:
+        # Column 0: raw time-domain.
         ax_time = axs[i, 0]
-        # Column 1: FFT Overlay for Raw and Decimated Data.
+        # Column 1: FFT overlay (raw and decimated).
         ax_freq = axs[i, 1]
-        # Column 2: Time Domain for Difference Signal (using FFT-based reconstruction).
+        # Column 2: time-domain difference signal.
         ax_diff_time = axs[i, 2]
-        # Column 3: FFT for the Difference Signal.
-        ax_diff_freq = axs[i, 3]
+        # Column 3: FFT of the difference signal.
+        ax_diff_fft = axs[i, 3]
+        # Column 4: Spectral Flatness Measure display.
+        ax_sf = axs[i, 4]
         
         # ----- TIME DOMAIN PLOT FOR RAW DATA -----
-        data = channel[:]                         # raw TDMS data
-        channel_time = channel.time_track()         # corresponding time track
+        data = channel[:]  # Raw TDMS data.
+        channel_time = channel.time_track()  # Corresponding time track.
         x = np.array(channel_time)
         y = np.array(data)
         
-        # Plot the raw data.
         ax_time.plot(channel_time, data,
                      linewidth=0.75,
                      label="Original Data",
                      rasterized=True,
                      zorder=10)
         
-        # Compute and plot a linear trendline.
+        # Plot a linear trendline.
         if len(x) > 1:
             coeffs = np.polyfit(x, y, 1)
             trend = np.poly1d(coeffs)(x)
@@ -99,7 +117,7 @@ for channel_group in chunks(channels, 6):
                          label="Trendline",
                          zorder=30)
         
-        # Insert a statistics table for raw data (min, median, max).
+        # Insert a statistics table (min, median, max).
         bound_lower = np.min(data)
         bound_middle = np.median(data)
         bound_upper = np.max(data)
@@ -127,23 +145,24 @@ for channel_group in chunks(channels, 6):
         leg = ax_time.legend(loc="lower right")
         leg.set_zorder(40)
         
-        # ----- FFT OVERLAY PLOT FOR RAW & DECIMATED DATA (Column 1) -----
-        # Compute raw data FFT.
-        dt = np.mean(np.diff(channel_time))  # estimated sampling interval for raw data
-        f_axis = np.fft.rfftfreq(len(data), d=dt)
-        fft_vals = np.fft.rfft(data - np.mean(data))
-        magnitude = np.abs(fft_vals)
+        # ----- COMPUTE DECIMATED DATA (CALCULATED ONLY ONCE) -----
+        dt = np.mean(np.diff(channel_time))  # Sampling interval for raw data.
+        data_mean = np.mean(data)
+        centered_data = data - data_mean
+        data_decimated = decimate(centered_data, decimation_factor, ftype='iir', zero_phase=True) + data_mean
+        dt_decimated = decimation_factor * dt
         
-        # Compute decimated data and its FFT.
-        q = 2  # Decimation factor.
-        mean_original = np.mean(data)
-        data_decimated = decimate(data - mean_original, q, ftype='iir', zero_phase=True) + mean_original
-        dt_decimated = q * dt  # effective sampling interval of decimated signal
+        # FFT parameters for decimated data.
         f_axis_decimated = np.fft.rfftfreq(len(data_decimated), d=dt_decimated)
         fft_decimated = np.fft.rfft(data_decimated - np.mean(data_decimated))
         magnitude_decimated = np.abs(fft_decimated)
         
-        # Plot overlay: FFT of raw data and decimated data.
+        # ----- FFT OVERLAY PLOT (Column 1) -----
+        # FFT of raw data.
+        f_axis = np.fft.rfftfreq(len(data), d=dt)
+        fft_vals = np.fft.rfft(data - np.mean(data))
+        magnitude = np.abs(fft_vals)
+        
         ax_freq.plot(f_axis, magnitude,
                      label="FFT Raw",
                      color='blue',
@@ -159,15 +178,13 @@ for channel_group in chunks(channels, 6):
         leg_freq = ax_freq.legend(loc="upper right")
         leg_freq.set_zorder(40)
         
-        # ----- FFT-BASED RECONSTRUCTION AND DIFFERENCE SIGNAL (Time Domain) -----
-        # Reconstruct the decimated signal to full length using FFT-based zero-padding.
-        data_reconstructed = fft_reconstruct(data_decimated, len(data))
-        # Compute the difference between the original data and the reconstructed decimated signal.
+        # ----- FFT-BASED RECONSTRUCTION & DIFFERENCE SIGNAL (Column 2) -----
+        data_reconstructed = fft_reconstruct(data_decimated, len(data), decimation_factor)
         diff_signal = data - data_reconstructed
         
         ax_diff_time.plot(channel_time, diff_signal,
                           linewidth=0.75,
-                          label="Difference (Original - Reconstructed)",
+                          label="Diff (Orig - Recon)",
                           color='red',
                           rasterized=True,
                           zorder=10)
@@ -180,24 +197,46 @@ for channel_group in chunks(channels, 6):
         leg_diff.set_zorder(40)
         
         # ----- FFT OF THE DIFFERENCE SIGNAL (Column 3) -----
-        # Compute the FFT of the full-resolution difference signal.
-        dt_diff = dt  # using the original sampling interval
+        dt_diff = dt  # Use the original sampling interval.
         f_diff = np.fft.rfftfreq(len(diff_signal), d=dt_diff)
         fft_diff = np.fft.rfft(diff_signal - np.mean(diff_signal))
         magnitude_diff = np.abs(fft_diff)
         
-        ax_diff_freq.plot(f_diff, magnitude_diff,
-                          label="FFT Diff",
-                          color='red',
-                          zorder=10)
-        ax_diff_freq.set_xlabel("Frequency (Hz)")
-        ax_diff_freq.set_ylabel("Magnitude")
-        ax_diff_freq.set_title(f"Channel: {channel.name} (FFT of Diff)")
-        ax_diff_freq.grid(True)
-        leg_diff_freq = ax_diff_freq.legend(loc="upper right")
-        leg_diff_freq.set_zorder(40)
+        ax_diff_fft.plot(f_diff, magnitude_diff,
+                         label="FFT Diff",
+                         color='red',
+                         zorder=10)
+        ax_diff_fft.set_xlabel("Frequency (Hz)")
+        ax_diff_fft.set_ylabel("Magnitude")
+        ax_diff_fft.set_title(f"Channel: {channel.name} (FFT of Diff)")
+        ax_diff_fft.grid(True)
+        leg_diff_fft = ax_diff_fft.legend(loc="upper right")
+        leg_diff_fft.set_zorder(40)
         
-    # Turn off unused axes for rows that have no channel data.
+        # ----- SPECTRAL FLATNESS MEASURE (Column 4) -----
+        # The power spectrum calculated from the diff signal FFT:
+        power_spec = magnitude_diff**2
+        eps = 1e-12  # small constant to avoid log(0)
+        sfm = np.exp(np.mean(np.log(power_spec + eps))) / np.mean(power_spec + eps)
+        # Optional: Provide an interpretation.
+        if sfm > 0.8:
+            interpretation = "Flat (White Noise) >0.8 "
+        else:
+            interpretation = "Tonal <0.8"
+        
+        ax_sf.set_title(f"Channel: {channel.name}\nSpectral Flatness")
+        # Display the SFM value and interpretation in the axis.
+        ax_sf.text(0.5, 0.5, f"SFM = {sfm:.3f}\n{interpretation}",
+                   horizontalalignment='center',
+                   verticalalignment='center',
+                   transform=ax_sf.transAxes,
+                   fontsize=8)
+        # Remove axis ticks.
+        ax_sf.set_xticks([])
+        ax_sf.set_yticks([])
+        ax_sf.set_frame_on(False)
+        
+    # Turn off any unused axes.
     for j in range(n_channels, n_rows_fixed):
         for col in range(n_cols):
             axs[j, col].axis("off")
