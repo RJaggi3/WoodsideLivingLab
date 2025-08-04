@@ -4,74 +4,84 @@ import pandas as pd
 import h5py
 import matplotlib.pyplot as plt
 
-# Define SDOF Parameters
-m = 1.0                     # mass [kg]
-k = (2*np.pi*5)**2 * m      # stiffness for fn = 5 Hz
-c = 2 * m * (2*np.pi*5) * 0.02  # damping for zeta = 0.02
+# 1. Define SDOF parameters
+m = 1.0                           # mass [kg]
+k = (2 * np.pi * 5)**2 * m       # stiffness for fn = 5 Hz
+c = 2 * m * (2 * np.pi * 5) * 0.02  # damping for zeta = 0.02
 
-# Derived quantities
-fn = 1/(2*np.pi) * np.sqrt(k/m)
-zeta = c/(2*np.sqrt(k*m))
+# natural frequency (Hz) for reference
+fn = 1/(2 * np.pi) * np.sqrt(k/m)
 
-# Time settings
-fs = 200.0                  # sampling rate [Hz]
-dt = 1/fs                   # time step [s]
-T = 300.0                    # total duration [s]
-t = np.arange(0, T, dt)     # time vector
+# 2. Time vector
+fs = 200.0            # sampling rate [Hz]
+dt = 1/fs             # time step [s]
+T = 300.0             # total duration [s]
+t = np.arange(0, T, dt)
+N = len(t)
 
-# Define Excitation (white noise)
+# 3. White-noise excitation
 np.random.seed(42)
-f = 0.1 * np.random.randn(len(t))  # force amplitude scaled
+f = 0.1 * np.random.randn(N)
 
-# Equation of motion: m*x'' + c*x' + k*x = f(t)
+# 4. ODE definition: m*x'' + c*x' + k*x = f(t)
 def sdof_ode(ti, yi):
     x, v = yi
-    # interpolate force at time ti
     fi = np.interp(ti, t, f)
     dxdt = v
-    dvdt = (fi - c*v - k*x) / m
+    dvdt = (fi - c * v - k * x) / m
     return [dxdt, dvdt]
 
-# Integrate ODE
-y0 = [0.0, 0.0]  # initial displacement and velocity
-sol = solve_ivp(sdof_ode, [t[0], t[-1]], y0, t_eval=t, method='RK45')
-
+# 5. Integrate
+y0 = [0.0, 0.0]
+sol = solve_ivp(sdof_ode, (t[0], t[-1]), y0, t_eval=t, method='RK45')
 x = sol.y[0]
 v = sol.y[1]
-a = np.gradient(v, dt)  # approximate acceleration
 
-# 2.5 Add sensor effects (Gaussian noise + quantisation)
-noise_level = 0.02
-x_noisy = x + noise_level * np.std(x) * np.random.randn(len(x))
+# 6. Compute acceleration from the EOM residual
+a = (f - c * v - k * x) / m
 
-adc_bits = 16
-adc_range = np.max(np.abs(x_noisy))
-quant = 2*adc_range / (2**adc_bits)
-x_noisy_q = (quant * np.round(x_noisy/quant))
-
-# 2.6 Package into DataFrame
-df = pd.DataFrame({
-    'time': t,
-    'disp_true': x,
-    'vel_true': v,
-    'acc_true': a,
-    'disp_noisy': x_noisy_q
-})
-
-# 2.7 Save to disk
-df.to_csv('sdof_dataset.csv', index=False)
-
-with h5py.File('sdof_dataset.h5', 'w') as hf:
+# 7. Save acceleration time series
+df = pd.DataFrame({'time': t, 'acc_true': a})
+df.to_csv('sdof_acceleration.csv', index=False)
+with h5py.File('sdof_acceleration.h5', 'w') as hf:
     grp = hf.create_group('sdof')
-    for col in df.columns:
-        grp.create_dataset(col, data=df[col].values)
+    grp.create_dataset('time', data=t)
+    grp.create_dataset('acc_true', data=a)
 
-# 2.8 Quick Plot
-plt.figure(figsize=(10,4))
-plt.plot(t, x, label='True displacement')
-#plt.plot(t, x_noisy_q, '.', ms=1, alpha=0.5, label='Noisy + quantised')
+# 8. FFT of acceleration
+#    single-sided spectrum
+A = np.fft.rfft(a)
+freqs = np.fft.rfftfreq(N, dt)
+amp = 2.0 / N * np.abs(A)
+
+# find dominant peak
+peak_idx = np.argmax(amp)
+peak_freq = freqs[peak_idx]
+print(f"Designed fn = {fn:.3f} Hz; FFT peak = {peak_freq:.3f} Hz")
+
+# 9. Plotting
+plt.figure(figsize=(12,5))
+
+plt.subplot(1,2,1)
+plt.plot(t, a, color='C1')
+plt.title('Time Series: Acceleration')
 plt.xlabel('Time [s]')
-plt.ylabel('Displacement')
-plt.legend()
+plt.ylabel('Acceleration [m/s²]')
+
+plt.subplot(1,2,2)
+plt.semilogy(freqs, amp, color='C2')
+
+ax2 = plt.subplot(1,2,2)
+ax2.semilogy(freqs, amp, color='C2')
+ax2.set_xscale('log')          
+ax2.axvline(fn, color='k', linestyle='--', label=f'fn = {fn:.1f} Hz')
+
+ax2.set_title('FFT of Acceleration')
+ax2.set_xlabel('Frequency [Hz]')
+ax2.set_ylabel('Amplitude')
+ax2.legend()
+
+
+
 plt.tight_layout()
 plt.show()
